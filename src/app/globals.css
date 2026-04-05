@@ -1,0 +1,345 @@
+@import "tailwindcss";
+
+:root {
+  --bg-1: #f5fbf9;
+  --bg-2: #fff7ec;
+  --bg-3: #e6f3ef;
+  --ink-1: #173328;
+  --ink-2: #47685d;
+  --accent-1: #0d8c74;
+  --accent-2: #f58f3d;
+  --line: rgba(23, 51, 40, 0.16);
+  --card: rgba(255, 255, 255, 0.86);
+}
+
+@theme inline {
+  --color-background: var(--bg-1);
+  --color-foreground: var(--ink-1);
+  --font-sans: var(--font-space-grotesk);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink-1);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(13, 140, 116, 0.2), transparent 42%),
+    radial-gradient(circle at 85% 8%, rgba(245, 143, 61, 0.18), transparent 36%),
+    linear-gradient(140deg, var(--bg-1), var(--bg-2) 50%, var(--bg-3));
+  font-family: var(--font-space-grotesk), "Segoe UI", sans-serif;
+  line-height: 1.4;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+      rgba(13, 140, 116, 0.05) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(13, 140, 116, 0.05) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: radial-gradient(circle at center, black 45%, transparent 78%);
+  mask-image: radial-gradient(circle at center, black 45%, transparent 78%);
+}
+
+a {
+  color: inherit;
+}
+
+.page-shell {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+@media (min-width: 768px) {
+  .page-shell {
+    padding: 2.5rem 1.5rem 3rem;
+  }
+}
+
+.hero-title {
+  margin: 0;
+  font-family: var(--font-playfair-display), Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: clamp(0.96rem, 2vw, 1.1rem);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--card);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  padding: 1rem;
+  box-shadow:
+    0 10px 24px rgba(7, 44, 35, 0.08),
+    inset 0 1px rgba(255, 255, 255, 0.55);
+}
+
+@media (min-width: 768px) {
+  .panel {
+    padding: 1.25rem;
+  }
+}
+
+.section-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-playfair-display), Georgia, serif;
+  font-size: clamp(1.25rem, 2.4vw, 1.8rem);
+  line-height: 1.1;
+}
+
+.grid-cards {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.kpi {
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.8rem;
+}
+
+.kpi-label {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.kpi-value {
+  margin-top: 0.3rem;
+  font-weight: 700;
+  font-size: 1.45rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  min-height: 42px;
+  padding: 0.6rem 0.95rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  color: #f8fffc;
+  background: linear-gradient(130deg, var(--accent-1), #086457);
+  box-shadow: 0 10px 18px rgba(13, 140, 116, 0.25);
+}
+
+.btn-secondary {
+  color: #5f3812;
+  background: linear-gradient(130deg, #ffd7a9, #ffc17b);
+  border-color: rgba(122, 72, 24, 0.2);
+}
+
+.btn-ghost {
+  color: var(--ink-1);
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.field,
+.select,
+.textarea {
+  width: 100%;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink-1);
+  min-height: 42px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.92rem;
+}
+
+.textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid rgba(13, 140, 116, 0.25);
+  outline-offset: 1px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.84rem;
+  color: var(--ink-2);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.status-box {
+  margin-bottom: 0.95rem;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.88rem;
+  border: 1px solid transparent;
+}
+
+.status-box.success {
+  background: rgba(40, 161, 133, 0.16);
+  border-color: rgba(11, 122, 98, 0.38);
+  color: #0a5f4d;
+}
+
+.status-box.error {
+  background: rgba(225, 74, 74, 0.11);
+  border-color: rgba(185, 56, 56, 0.28);
+  color: #86312f;
+}
+
+.table-wrap {
+  overflow: auto;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 620px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid rgba(24, 67, 55, 0.1);
+  padding: 0.55rem 0.6rem;
+  font-size: 0.82rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  color: #355f53;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: revealUp 460ms ease forwards;
+}
+
+.delay-60 {
+  animation-delay: 60ms;
+}
+
+.delay-70 {
+  animation-delay: 70ms;
+}
+
+.delay-80 {
+  animation-delay: 80ms;
+}
+
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-110 {
+  animation-delay: 110ms;
+}
+
+.delay-120 {
+  animation-delay: 120ms;
+}
+
+.delay-140 {
+  animation-delay: 140ms;
+}
+
+.delay-150 {
+  animation-delay: 150ms;
+}
+
+.delay-180 {
+  animation-delay: 180ms;
+}
+
+.delay-220 {
+  animation-delay: 220ms;
+}
+
+.delay-260 {
+  animation-delay: 260ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+.delay-340 {
+  animation-delay: 340ms;
+}
+
+.delay-380 {
+  animation-delay: 380ms;
+}
+
+.delay-420 {
+  animation-delay: 420ms;
+}
+
+.delay-460 {
+  animation-delay: 460ms;
+}
+
+@keyframes revealUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
