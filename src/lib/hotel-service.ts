@@ -1,6 +1,7 @@
-import BetterSqlite3 from "better-sqlite3";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { customAlphabet } from "nanoid";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -22,7 +23,25 @@ import type {
   VoucherRecord,
 } from "@/lib/hotel-types";
 
-type SqliteDatabase = InstanceType<typeof BetterSqlite3>;
+interface SqliteStatement {
+  run: (...params: unknown[]) => { lastInsertRowid?: number | bigint; changes?: number };
+  get: (...params: unknown[]) => unknown;
+  all: (...params: unknown[]) => unknown[];
+}
+
+interface SqliteDatabase {
+  exec: (sql: string) => unknown;
+  prepare: (sql: string) => SqliteStatement;
+}
+
+type UserRole = "Super Admin" | "Resto Checker" | "Manager";
+
+export interface AuthenticatedAdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+}
 
 const randomCode = customAlphabet("23456789ABCDEFGHJKLMNPQRSTUVWXYZ", 8);
 
@@ -36,6 +55,30 @@ const globalForHotelDb = globalThis as unknown as {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hashed = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hashed}`;
+}
+
+function verifyPassword(password: string, storedPassword: string): boolean {
+  const [salt, storedHash] = storedPassword.split(":");
+
+  if (!salt || !storedHash) {
+    return password === storedPassword;
+  }
+
+  const generatedHash = scryptSync(password, salt, 64).toString("hex");
+  const storedBuffer = Buffer.from(storedHash, "hex");
+  const generatedBuffer = Buffer.from(generatedHash, "hex");
+
+  if (storedBuffer.length !== generatedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(storedBuffer, generatedBuffer);
 }
 
 export function toDateOnly(input: Date | string = new Date()): string {
@@ -153,9 +196,9 @@ function createDatabase(): SqliteDatabase {
   fs.mkdirSync(dataDirectory, { recursive: true });
   fs.mkdirSync(qrDirectory, { recursive: true });
 
-  const db = new BetterSqlite3(databasePath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const db = new DatabaseSync(databasePath) as unknown as SqliteDatabase;
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON;");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -292,6 +335,79 @@ function parseManagerPhones(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function ensureDefaultAdminUser() {
+  const defaultName = process.env.DEFAULT_ADMIN_NAME?.trim() || "Grand Sunshine Admin";
+  const defaultEmail =
+    process.env.DEFAULT_ADMIN_EMAIL?.trim().toLowerCase() || "admin@grandsunshine.local";
+  const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim() || "Admin123!";
+
+  db.prepare(
+    `
+      INSERT INTO users (
+        name,
+        email,
+        password,
+        role,
+        created_at
+      ) VALUES (?, ?, ?, 'Super Admin', ?)
+      ON CONFLICT(email) DO NOTHING
+    `,
+  ).run(defaultName, defaultEmail, hashPassword(defaultPassword), nowIso());
+}
+
+export function authenticateAdminUser(input: {
+  email: string;
+  password: string;
+}): AuthenticatedAdminUser | null {
+  ensureDefaultAdminUser();
+
+  const email = input.email.trim().toLowerCase();
+  const password = input.password;
+
+  if (!email || !password) {
+    return null;
+  }
+
+  const user = db
+    .prepare(
+      `
+        SELECT
+          id,
+          name,
+          email,
+          password,
+          role
+        FROM users
+        WHERE lower(email) = lower(?)
+        LIMIT 1
+      `,
+    )
+    .get(email) as
+    | {
+        id: number;
+        name: string;
+        email: string;
+        password: string;
+        role: UserRole;
+      }
+    | undefined;
+
+  if (!user) {
+    return null;
+  }
+
+  if (!verifyPassword(password, user.password)) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
 }
 
 export function getGatewaySettings(): GatewaySettings {

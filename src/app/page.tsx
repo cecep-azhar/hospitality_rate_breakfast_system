@@ -26,7 +26,7 @@ export default function Home() {
               Scan Voucher Makan Pagi
             </Link>
             <Link href="/admin" className="btn btn-ghost">
-              Dashboard Admin
+              Dashboard Admin (Login)
             </Link>
             <Link href="/ads?type=Room&next=/rating/thanks?type=Room" className="btn btn-ghost">
               Preview Halaman Advertising

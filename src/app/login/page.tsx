@@ -1,0 +1,97 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import { StatusMessage } from "@/components/status-message";
+import { getAdminSession } from "@/lib/auth-session";
+import { loginAdminAction } from "@/lib/hotel-actions";
+
+type SearchParamsInput = Promise<Record<string, string | string[] | undefined>>;
+
+function getSingle(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] || "";
+  }
+
+  return value || "";
+}
+
+function normalizeNextPath(rawPath: string): string {
+  if (!rawPath.startsWith("/") || rawPath.startsWith("//")) {
+    return "/admin";
+  }
+
+  return rawPath;
+}
+
+export default async function LoginPage(props: { searchParams: SearchParamsInput }) {
+  const searchParams = await props.searchParams;
+  const requestedNextPath = normalizeNextPath(getSingle(searchParams.next) || "/admin");
+
+  const session = await getAdminSession();
+  if (session) {
+    redirect(requestedNextPath);
+  }
+
+  return (
+    <main className="page-shell">
+      <section className="panel reveal max-w-2xl mx-auto">
+        <p className="badge">Admin Login</p>
+        <h1 className="hero-title mt-2">Masuk ke Dashboard Admin</h1>
+        <p className="subtitle mt-2">
+          Login diperlukan untuk mengakses menu admin dan menjalankan operasi penting
+          (master data, generate voucher, report, dan gateway settings).
+        </p>
+
+        <StatusMessage status={searchParams.status} message={searchParams.message} />
+
+        <form action={loginAdminAction} className="space-y-3 mt-4">
+          <input type="hidden" name="next" value={requestedNextPath} />
+
+          <div>
+            <label className="label" htmlFor="email">
+              Email
+            </label>
+            <input
+              className="field"
+              id="email"
+              name="email"
+              type="email"
+              placeholder="admin@grandsunshine.local"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="label" htmlFor="password">
+              Password
+            </label>
+            <input
+              className="field"
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Masukkan password"
+              required
+            />
+          </div>
+
+          <button className="btn btn-primary" type="submit">
+            Login
+          </button>
+        </form>
+
+        <article className="kpi mt-4">
+          <p className="kpi-label">Default Login (jika belum ada user)</p>
+          <p className="text-sm text-[#355f53] mt-1">Email: admin@grandsunshine.local</p>
+          <p className="text-sm text-[#355f53]">Password: Admin123!</p>
+        </article>
+
+        <div className="mt-4">
+          <Link href="/" className="btn btn-ghost">
+            Kembali ke Home
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}

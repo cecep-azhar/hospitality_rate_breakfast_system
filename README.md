@@ -14,7 +14,7 @@ Aplikasi ini adalah implementasi v2 untuk flow berikut:
 Arsitektur dibangun dengan:
 
 - Next.js App Router
-- SQLite lokal (via better-sqlite3)
+- SQLite lokal (via node:sqlite bawaan Node.js)
 - Import Excel (via xlsx)
 - QR generator (via qrcode)
 
@@ -41,11 +41,28 @@ http://localhost:3000
 ## Struktur Flow Halaman
 
 - `/` landing flow v2
+- `/login` halaman login admin
 - `/admin` dashboard operasional
 - `/rating/form?type=Room|Meeting|Vendor` form rating publik
 - `/ads` halaman advertising setelah submit rating
 - `/rating/thanks` halaman ucapan terima kasih
 - `/scan` halaman scan voucher restoran
+
+## Login Admin
+
+Admin wajib login sebelum mengakses `/admin`.
+
+Default akun (otomatis dibuat jika tabel users masih kosong):
+
+- Email: `admin@grandsunshine.local`
+- Password: `Admin123!`
+
+Kredensial default bisa diganti lewat environment variable:
+
+- `DEFAULT_ADMIN_NAME`
+- `DEFAULT_ADMIN_EMAIL`
+- `DEFAULT_ADMIN_PASSWORD`
+- `APP_AUTH_SECRET` (wajib diganti untuk production)
 
 ## Ringkasan Fitur Admin
 

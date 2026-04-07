@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { StatusMessage } from "@/components/status-message";
+import { getAdminSession } from "@/lib/auth-session";
 import {
   addRoomAction,
   addTransactionAction,
   addVendorAction,
   generateVouchersAction,
   importTransactionsAction,
+  logoutAdminAction,
   saveGatewaySettingsAction,
   sendVoucherManualAction,
 } from "@/lib/hotel-actions";
@@ -34,6 +37,12 @@ function statusChipClass(status: string): string {
 
 export default async function AdminPage(props: { searchParams: SearchParamsInput }) {
   const searchParams = await props.searchParams;
+  const session = await getAdminSession();
+
+  if (!session) {
+    redirect("/login?next=/admin");
+  }
+
   const snapshot = getAdminSnapshot();
 
   const managerPhonesMultiline = snapshot.gatewaySettings.managerPhoneNumbers.join("\n");
@@ -53,7 +62,15 @@ export default async function AdminPage(props: { searchParams: SearchParamsInput
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="badge">
+              {session.name} ({session.role})
+            </span>
+            <form action={logoutAdminAction}>
+              <button className="btn btn-ghost" type="submit">
+                Logout
+              </button>
+            </form>
             <Link className="btn btn-ghost" href="/">
               Kembali ke Home
             </Link>
@@ -455,7 +472,7 @@ export default async function AdminPage(props: { searchParams: SearchParamsInput
           </form>
 
           <h3 className="mt-5 text-sm font-semibold text-[#244d42]">Import Excel Transaction</h3>
-          <form action={importTransactionsAction} className="mt-2 space-y-3" encType="multipart/form-data">
+          <form action={importTransactionsAction} className="mt-2 space-y-3">
             <label className="label" htmlFor="excelFileUpload">
               File Excel (.xlsx/.xls/.csv)
             </label>

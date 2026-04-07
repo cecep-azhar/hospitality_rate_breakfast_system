@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  clearAdminSessionCookie,
+  createAdminSessionCookie,
+  getAdminSession,
+} from "@/lib/auth-session";
+import {
+  authenticateAdminUser,
   createRoom,
   createTransaction,
   createVendor,
@@ -52,7 +58,62 @@ function ensureRatingType(value: string): RatingType {
   return "Room";
 }
 
+function normalizeNextPath(rawPath: string): string {
+  if (!rawPath.startsWith("/") || rawPath.startsWith("//")) {
+    return "/admin";
+  }
+
+  return rawPath;
+}
+
+function loginPathWithNext(nextPath: string): string {
+  return `/login?next=${encodeURIComponent(nextPath)}`;
+}
+
+async function requireAdminSessionOrRedirect(nextPath = "/admin") {
+  const session = await getAdminSession();
+  if (!session) {
+    redirect(withStatus(loginPathWithNext(nextPath), "error", "Silakan login terlebih dahulu."));
+  }
+
+  return session;
+}
+
+export async function loginAdminAction(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const nextPath = normalizeNextPath(String(formData.get("next") ?? "/admin"));
+
+  if (!email || !password) {
+    redirect(withStatus(loginPathWithNext(nextPath), "error", "Email dan password wajib diisi."));
+  }
+
+  const user = authenticateAdminUser({
+    email,
+    password,
+  });
+
+  if (!user) {
+    redirect(withStatus(loginPathWithNext(nextPath), "error", "Email atau password salah."));
+  }
+
+  await createAdminSessionCookie({
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
+
+  redirect(nextPath);
+}
+
+export async function logoutAdminAction() {
+  await clearAdminSessionCookie();
+  redirect(withStatus("/login", "success", "Logout berhasil."));
+}
+
 export async function saveGatewaySettingsAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -82,6 +143,7 @@ export async function saveGatewaySettingsAction(formData: FormData) {
 }
 
 export async function addRoomAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -104,6 +166,7 @@ export async function addRoomAction(formData: FormData) {
 }
 
 export async function addVendorAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -125,6 +188,7 @@ export async function addVendorAction(formData: FormData) {
 }
 
 export async function addTransactionAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -157,6 +221,7 @@ export async function addTransactionAction(formData: FormData) {
 }
 
 export async function importTransactionsAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -183,6 +248,7 @@ export async function importTransactionsAction(formData: FormData) {
 }
 
 export async function generateVouchersAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
@@ -204,6 +270,7 @@ export async function generateVouchersAction(formData: FormData) {
 }
 
 export async function sendVoucherManualAction(formData: FormData) {
+  await requireAdminSessionOrRedirect("/admin");
   let targetPath = "/admin";
 
   try {
