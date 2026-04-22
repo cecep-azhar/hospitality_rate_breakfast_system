@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hospitality-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - APP_AUTH_SECRET=${APP_AUTH_SECRET:-your-secret-key-min-32-chars}
+      - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-admin@grandsunshine.local}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - DEFAULT_ADMIN_NAME=${DEFAULT_ADMIN_NAME:-Grand Sunshine Admin}
+      - WA_ENDPOINT_VOUCHER=${WA_ENDPOINT_VOUCHER:-}
+      - WA_TOKEN_VOUCHER=${WA_TOKEN_VOUCHER:-}
+      - WA_ENDPOINT_RATING=${WA_ENDPOINT_RATING:-}
+      - WA_TOKEN_RATING=${WA_TOKEN_RATING:-}
+      - MANAGER_PHONE_NUMBERS=${MANAGER_PHONE_NUMBERS:-}
+      - VIDEO_ADS_URL=${VIDEO_ADS_URL:-}
+    volumes:
+      - ./data:/app/data
+      - ./public/generated-qr:/app/public/generated-qr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: PostgreSQL for production
+  # Uncomment when ready to migrate from SQLite
+  #
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: hospitality-db
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_USER=${POSTGRES_USER:-hospitality}
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #     - POSTGRES_DB=${POSTGRES_DB:-hospitality}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U hospitality"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: hospitality-network

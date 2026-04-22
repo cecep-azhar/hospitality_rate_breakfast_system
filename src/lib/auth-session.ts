@@ -1,19 +1,25 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
-const SESSION_COOKIE_NAME = "gs_admin_session";
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from "@/lib/constants";
+import { logger } from "@/lib/logger";
 
 export interface AdminSession {
   userId: number;
   name: string;
   email: string;
-  role: "Super Admin" | "Resto Checker" | "Manager";
+  role: UserRole;
   exp: number;
 }
 
+export type UserRole = "Super Admin" | "Resto Checker" | "Manager";
+
 function getAuthSecret(): string {
-  return process.env.APP_AUTH_SECRET?.trim() || "grand-sunshine-auth-secret-change-me";
+  const secret = process.env.APP_AUTH_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("APP_AUTH_SECRET environment variable is required and must be at least 32 characters");
+  }
+  return secret;
 }
 
 function base64UrlEncode(input: string): string {
@@ -97,7 +103,7 @@ export async function createAdminSessionCookie(input: {
   userId: number;
   name: string;
   email: string;
-  role: "Super Admin" | "Resto Checker" | "Manager";
+  role: UserRole;
 }) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS;
 
@@ -117,6 +123,8 @@ export async function createAdminSessionCookie(input: {
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
+
+  logger.auth.login(input.email, true, { userId: input.userId, role: input.role });
 }
 
 export async function clearAdminSessionCookie() {
@@ -136,8 +144,33 @@ export async function getAdminSession(): Promise<AdminSession | null> {
 
   if (!session) {
     cookieStore.delete(SESSION_COOKIE_NAME);
+    logger.auth.sessionExpired(0);
     return null;
   }
 
   return session;
+}
+
+export async function rotateSessionToken(): Promise<string | null> {
+  const session = await getAdminSession();
+  if (!session) {
+    return null;
+  }
+
+  const newExp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS;
+  const newToken = signSessionToken({
+    ...session,
+    exp: newExp,
+  });
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, newToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  });
+
+  return newToken;
 }

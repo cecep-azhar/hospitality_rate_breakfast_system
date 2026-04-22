@@ -4,28 +4,13 @@ import { redirect } from "next/navigation";
 import { StatusMessage } from "@/components/status-message";
 import { getAdminSession } from "@/lib/auth-session";
 import { loginAdminAction } from "@/lib/hotel-actions";
+import { getSingleQueryValue, normalizeInternalPath } from "@/lib/route-utils";
 
 type SearchParamsInput = Promise<Record<string, string | string[] | undefined>>;
 
-function getSingle(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || "";
-  }
-
-  return value || "";
-}
-
-function normalizeNextPath(rawPath: string): string {
-  if (!rawPath.startsWith("/") || rawPath.startsWith("//")) {
-    return "/admin";
-  }
-
-  return rawPath;
-}
-
 export default async function LoginPage(props: { searchParams: SearchParamsInput }) {
   const searchParams = await props.searchParams;
-  const requestedNextPath = normalizeNextPath(getSingle(searchParams.next) || "/admin");
+  const requestedNextPath = normalizeInternalPath(getSingleQueryValue(searchParams.next) || "/admin");
 
   const session = await getAdminSession();
   if (session) {

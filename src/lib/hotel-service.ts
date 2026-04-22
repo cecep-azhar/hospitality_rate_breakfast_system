@@ -23,6 +23,8 @@ import type {
   VoucherRecord,
 } from "@/lib/hotel-types";
 
+import { runMigrations } from "@/lib/db-migrations";
+
 interface SqliteStatement {
   run: (...params: unknown[]) => { lastInsertRowid?: number | bigint; changes?: number };
   get: (...params: unknown[]) => unknown;
@@ -322,6 +324,16 @@ if (!globalForHotelDb.hotelDb) {
   globalForHotelDb.hotelDb = db;
 }
 
+// Run migrations on startup
+try {
+  const migrationResult = runMigrations();
+  if (migrationResult.failed.length > 0) {
+    console.error("Migration failures:", migrationResult.failed);
+  }
+} catch (error) {
+  console.error("Migration error:", error);
+}
+
 function parseManagerPhones(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -338,10 +350,19 @@ function parseManagerPhones(value: string): string[] {
 }
 
 function ensureDefaultAdminUser() {
-  const defaultName = process.env.DEFAULT_ADMIN_NAME?.trim() || "Grand Sunshine Admin";
-  const defaultEmail =
-    process.env.DEFAULT_ADMIN_EMAIL?.trim().toLowerCase() || "admin@grandsunshine.local";
-  const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim() || "Admin123!";
+  const defaultName = process.env.DEFAULT_ADMIN_NAME?.trim();
+  const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL?.trim()?.toLowerCase();
+  const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim();
+
+  if (!defaultName || !defaultEmail || !defaultPassword) {
+    throw new Error(
+      "DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_EMAIL, and DEFAULT_ADMIN_PASSWORD environment variables are required",
+    );
+  }
+
+  if (defaultPassword.length < 8) {
+    throw new Error("DEFAULT_ADMIN_PASSWORD must be at least 8 characters");
+  }
 
   db.prepare(
     `
@@ -622,8 +643,43 @@ async function sendWhatsAppMessage(input: {
   }
 }
 
-export function listRooms(limit = 200): RoomRecord[] {
-  return db
+export interface ListRoomsOptions {
+  search?: string;
+  type?: RoomType;
+  limit?: number;
+  offset?: number;
+  includeDeleted?: boolean;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export function listRooms(options: ListRoomsOptions = {}): PaginatedResult<RoomRecord> {
+  const { search = "", type, limit = 50, offset = 0, includeDeleted = false } = options;
+
+  let whereClause = includeDeleted ? "WHERE 1=1" : "WHERE deleted_at IS NULL";
+  const params: unknown[] = [];
+
+  if (search.trim()) {
+    whereClause += " AND room_number_name LIKE ?";
+    params.push(`%${search.trim()}%`);
+  }
+
+  if (type) {
+    whereClause += " AND type = ?";
+    params.push(type);
+  }
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as count FROM rooms ${whereClause}`)
+    .get(...params) as { count: number };
+
+  const data = db
     .prepare(
       `
         SELECT
@@ -634,11 +690,20 @@ export function listRooms(limit = 200): RoomRecord[] {
           description,
           created_at
         FROM rooms
+        ${whereClause}
         ORDER BY room_number_name ASC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `,
     )
-    .all(limit) as RoomRecord[];
+    .all(...params, limit, offset) as RoomRecord[];
+
+  return {
+    data,
+    total: countRow.count,
+    limit,
+    offset,
+    hasMore: offset + data.length < countRow.count,
+  };
 }
 
 export function createRoom(input: {
@@ -694,6 +759,101 @@ export function createRoom(input: {
   return created;
 }
 
+export function updateRoom(id: number, input: {
+  roomNumberName: string;
+  type: RoomType;
+  capacity: number;
+  description?: string;
+}): RoomRecord {
+  const roomNumberName = input.roomNumberName.trim();
+
+  if (!roomNumberName) {
+    throw new Error("Nama/nomor ruangan wajib diisi.");
+  }
+
+  const existing = db.prepare("SELECT id FROM rooms WHERE id = ?").get(id);
+  if (!existing) {
+    throw new Error("Room tidak ditemukan.");
+  }
+
+  const conflictCheck = db.prepare(
+    "SELECT id FROM rooms WHERE room_number_name = ? AND id != ?",
+  ).get(roomNumberName, id);
+  if (conflictCheck) {
+    throw new Error("Room dengan nama yang sama sudah ada.");
+  }
+
+  db.prepare(
+    `
+      UPDATE rooms
+      SET room_number_name = @roomNumberName,
+          type = @type,
+          capacity = @capacity,
+          description = @description
+      WHERE id = @id
+    `,
+  ).run({
+    id,
+    roomNumberName,
+    type: input.type,
+    capacity: toPositiveNumber(input.capacity, 0),
+    description: input.description?.trim() || null,
+  });
+
+  const updated = db
+    .prepare(
+      `
+        SELECT
+          id,
+          room_number_name,
+          type,
+          capacity,
+          description,
+          created_at
+        FROM rooms
+        WHERE id = ?
+      `,
+    )
+    .get(id) as RoomRecord | undefined;
+
+  if (!updated) {
+    throw new Error("Gagal memperbarui data room.");
+  }
+
+  return updated;
+}
+
+export function deleteRoom(id: number, hard = false): void {
+  const existing = db.prepare("SELECT id FROM rooms WHERE id = ? AND deleted_at IS NULL").get(id);
+  if (!existing) {
+    throw new Error("Room tidak ditemukan atau sudah dihapus.");
+  }
+
+  if (hard) {
+    const transactionCount = db.prepare(
+      "SELECT COUNT(*) as count FROM transactions WHERE room_id = ?",
+    ).get(id) as { count: number };
+
+    if (transactionCount.count > 0) {
+      throw new Error(`Room tidak bisa dihapus secara permanen karena masih terhubung dengan ${transactionCount.count} transaction.`);
+    }
+
+    db.prepare("DELETE FROM rooms WHERE id = ?").run(id);
+  } else {
+    // Soft delete - just mark as deleted
+    db.prepare("UPDATE rooms SET deleted_at = ? WHERE id = ?").run(nowIso(), id);
+  }
+}
+
+export function restoreRoom(id: number): void {
+  const existing = db.prepare("SELECT id FROM rooms WHERE id = ? AND deleted_at IS NOT NULL").get(id);
+  if (!existing) {
+    throw new Error("Room tidak ditemukan atau belum dihapus.");
+  }
+
+  db.prepare("UPDATE rooms SET deleted_at = NULL WHERE id = ?").run(id);
+}
+
 function ensureRoomByName(roomName: string, type: RoomType = "Kamar"): RoomRecord {
   const existing = db
     .prepare(
@@ -723,8 +883,30 @@ function ensureRoomByName(roomName: string, type: RoomType = "Kamar"): RoomRecor
   });
 }
 
-export function listVendors(limit = 200): VendorRecord[] {
-  return db
+export interface ListVendorsOptions {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  includeDeleted?: boolean;
+}
+
+export function listVendors(options: ListVendorsOptions = {}): PaginatedResult<VendorRecord> {
+  const { search = "", limit = 50, offset = 0, includeDeleted = false } = options;
+
+  let whereClause = includeDeleted ? "WHERE 1=1" : "WHERE deleted_at IS NULL";
+  const params: unknown[] = [];
+
+  if (search.trim()) {
+    whereClause += " AND (vendor_name LIKE ? OR company_name LIKE ? OR contact_person LIKE ?)";
+    const searchPattern = `%${search.trim()}%`;
+    params.push(searchPattern, searchPattern, searchPattern);
+  }
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as count FROM vendors ${whereClause}`)
+    .get(...params) as { count: number };
+
+  const data = db
     .prepare(
       `
         SELECT
@@ -735,11 +917,20 @@ export function listVendors(limit = 200): VendorRecord[] {
           phone_number,
           created_at
         FROM vendors
+        ${whereClause}
         ORDER BY vendor_name ASC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `,
     )
-    .all(limit) as VendorRecord[];
+    .all(...params, limit, offset) as VendorRecord[];
+
+  return {
+    data,
+    total: countRow.count,
+    limit,
+    offset,
+    hasMore: offset + data.length < countRow.count,
+  };
 }
 
 export function createVendor(input: {
@@ -798,8 +989,128 @@ export function createVendor(input: {
   return created;
 }
 
-export function listTransactions(limit = 120): TransactionRecord[] {
-  return db
+export function updateVendor(id: number, input: {
+  vendorName: string;
+  companyName?: string;
+  contactPerson?: string;
+  phoneNumber?: string;
+}): VendorRecord {
+  const vendorName = input.vendorName.trim();
+  if (!vendorName) {
+    throw new Error("Nama vendor wajib diisi.");
+  }
+
+  const existing = db.prepare("SELECT id FROM vendors WHERE id = ?").get(id);
+  if (!existing) {
+    throw new Error("Vendor tidak ditemukan.");
+  }
+
+  const normalizedPhone = normalizePhoneNumber(input.phoneNumber ?? "");
+
+  db.prepare(
+    `
+      UPDATE vendors
+      SET vendor_name = @vendorName,
+          company_name = @companyName,
+          contact_person = @contactPerson,
+          phone_number = @phoneNumber
+      WHERE id = @id
+    `,
+  ).run({
+    id,
+    vendorName,
+    companyName: input.companyName?.trim() || null,
+    contactPerson: input.contactPerson?.trim() || null,
+    phoneNumber: normalizedPhone || null,
+  });
+
+  const updated = db
+    .prepare(
+      `
+        SELECT
+          id,
+          vendor_name,
+          company_name,
+          contact_person,
+          phone_number,
+          created_at
+        FROM vendors
+        WHERE id = ?
+      `,
+    )
+    .get(id) as VendorRecord | undefined;
+
+  if (!updated) {
+    throw new Error("Gagal memperbarui data vendor.");
+  }
+
+  return updated;
+}
+
+export function deleteVendor(id: number, hard = false): void {
+  const existing = db.prepare("SELECT id FROM vendors WHERE id = ? AND deleted_at IS NULL").get(id);
+  if (!existing) {
+    throw new Error("Vendor tidak ditemukan atau sudah dihapus.");
+  }
+
+  if (hard) {
+    db.prepare("DELETE FROM vendors WHERE id = ?").run(id);
+  } else {
+    db.prepare("UPDATE vendors SET deleted_at = ? WHERE id = ?").run(nowIso(), id);
+  }
+}
+
+export function restoreVendor(id: number): void {
+  const existing = db.prepare("SELECT id FROM vendors WHERE id = ? AND deleted_at IS NOT NULL").get(id);
+  if (!existing) {
+    throw new Error("Vendor tidak ditemukan atau belum dihapus.");
+  }
+
+  db.prepare("UPDATE vendors SET deleted_at = NULL WHERE id = ?").run(id);
+}
+
+export interface ListTransactionsOptions {
+  search?: string;
+  roomId?: number;
+  checkInDate?: string;
+  checkOutDate?: string;
+  limit?: number;
+  offset?: number;
+  includeDeleted?: boolean;
+}
+
+export function listTransactions(options: ListTransactionsOptions = {}): PaginatedResult<TransactionRecord> {
+  const { search = "", roomId, checkInDate, checkOutDate, limit = 50, offset = 0, includeDeleted = false } = options;
+
+  let whereClause = includeDeleted ? "WHERE 1=1" : "WHERE t.deleted_at IS NULL";
+  const params: unknown[] = [];
+
+  if (search.trim()) {
+    whereClause += " AND (t.guest_name LIKE ? OR t.phone_number LIKE ? OR t.email LIKE ?)";
+    const searchPattern = `%${search.trim()}%`;
+    params.push(searchPattern, searchPattern, searchPattern);
+  }
+
+  if (roomId) {
+    whereClause += " AND t.room_id = ?";
+    params.push(roomId);
+  }
+
+  if (checkInDate) {
+    whereClause += " AND date(t.check_in_date) = date(?)";
+    params.push(checkInDate);
+  }
+
+  if (checkOutDate) {
+    whereClause += " AND date(t.check_out_date) = date(?)";
+    params.push(checkOutDate);
+  }
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as count FROM transactions t ${whereClause}`)
+    .get(...params) as { count: number };
+
+  const data = db
     .prepare(
       `
         SELECT
@@ -818,11 +1129,20 @@ export function listTransactions(limit = 120): TransactionRecord[] {
           t.created_at
         FROM transactions t
         INNER JOIN rooms r ON r.id = t.room_id
+        ${whereClause}
         ORDER BY t.check_in_date DESC, t.id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `,
     )
-    .all(limit) as TransactionRecord[];
+    .all(...params, limit, offset) as TransactionRecord[];
+
+  return {
+    data,
+    total: countRow.count,
+    limit,
+    offset,
+    hasMore: offset + data.length < countRow.count,
+  };
 }
 
 export function createTransaction(input: {
@@ -944,6 +1264,151 @@ export function createTransaction(input: {
   }
 
   return created;
+}
+
+export function updateTransaction(id: number, input: {
+  guestName: string;
+  phoneNumber: string;
+  email?: string;
+  roomId?: number;
+  checkInDate: string;
+  checkOutDate: string;
+  paxAdult: number;
+  paxChild: number;
+  sourceBooking?: string;
+}): TransactionRecord {
+  const guestName = input.guestName.trim();
+  const phoneNumber = normalizePhoneNumber(input.phoneNumber);
+
+  if (!guestName) {
+    throw new Error("Nama tamu wajib diisi.");
+  }
+
+  if (!phoneNumber) {
+    throw new Error("Nomor telepon tamu tidak valid.");
+  }
+
+  const existing = db.prepare("SELECT id, room_id FROM transactions WHERE id = ?").get(id) as { id: number; room_id: number } | undefined;
+  if (!existing) {
+    throw new Error("Transaction tidak ditemukan.");
+  }
+
+  const checkInDate = toDateOnly(input.checkInDate);
+  const checkOutDate = toDateOnly(input.checkOutDate);
+
+  if (checkInDate > checkOutDate) {
+    throw new Error("Tanggal check-in tidak boleh lebih besar dari check-out.");
+  }
+
+  const roomId = input.roomId ?? existing.room_id;
+
+  const roomExists = db
+    .prepare("SELECT id FROM rooms WHERE id = ?")
+    .get(roomId) as { id: number } | undefined;
+
+  if (!roomExists) {
+    throw new Error("Room yang dipilih tidak ditemukan.");
+  }
+
+  db.prepare(
+    `
+      UPDATE transactions
+      SET guest_name = @guestName,
+          phone_number = @phoneNumber,
+          email = @email,
+          room_id = @roomId,
+          check_in_date = @checkInDate,
+          check_out_date = @checkOutDate,
+          pax_adult = @paxAdult,
+          pax_child = @paxChild,
+          source_booking = @sourceBooking
+      WHERE id = @id
+    `,
+  ).run({
+    id,
+    guestName,
+    phoneNumber,
+    email: input.email?.trim() || null,
+    roomId,
+    checkInDate,
+    checkOutDate,
+    paxAdult: Math.max(0, toPositiveNumber(input.paxAdult, 1)),
+    paxChild: Math.max(0, toPositiveNumber(input.paxChild, 0)),
+    sourceBooking: input.sourceBooking?.trim() || null,
+  });
+
+  const updated = db
+    .prepare(
+      `
+        SELECT
+          t.id,
+          t.guest_name,
+          t.phone_number,
+          t.email,
+          t.room_id,
+          r.room_number_name AS room_name,
+          r.type AS room_type,
+          t.check_in_date,
+          t.check_out_date,
+          t.pax_adult,
+          t.pax_child,
+          t.source_booking,
+          t.created_at
+        FROM transactions t
+        INNER JOIN rooms r ON r.id = t.room_id
+        WHERE t.id = ?
+      `,
+    )
+    .get(id) as TransactionRecord | undefined;
+
+  if (!updated) {
+    throw new Error("Gagal memperbarui transaction.");
+  }
+
+  return updated;
+}
+
+export function deleteTransaction(id: number, hard = false): void {
+  const existing = db.prepare("SELECT id FROM transactions WHERE id = ? AND deleted_at IS NULL").get(id);
+  if (!existing) {
+    throw new Error("Transaction tidak ditemukan atau sudah dihapus.");
+  }
+
+  if (hard) {
+    db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
+  } else {
+    db.prepare("UPDATE transactions SET deleted_at = ? WHERE id = ?").run(nowIso(), id);
+  }
+}
+
+export function restoreTransaction(id: number): void {
+  const existing = db.prepare("SELECT id FROM transactions WHERE id = ? AND deleted_at IS NOT NULL").get(id);
+  if (!existing) {
+    throw new Error("Transaction tidak ditemukan atau belum dihapus.");
+  }
+
+  db.prepare("UPDATE transactions SET deleted_at = NULL WHERE id = ?").run(id);
+}
+
+export function changeUserPassword(email: string, currentPassword: string, newPassword: string): void {
+  const user = db
+    .prepare(
+      `
+        SELECT id, password FROM users WHERE lower(email) = lower(?)
+      `,
+    )
+    .get(email) as { id: number; password: string } | undefined;
+
+  if (!user) {
+    throw new Error("User tidak ditemukan.");
+  }
+
+  if (!verifyPassword(currentPassword, user.password)) {
+    throw new Error("Password saat ini salah.");
+  }
+
+  const newHashedPassword = hashPassword(newPassword);
+  db.prepare("UPDATE users SET password = ? WHERE id = ?").run(newHashedPassword, user.id);
 }
 
 export function importTransactionsFromExcel(fileBuffer: Buffer): {
@@ -1167,8 +1632,47 @@ export async function generateVouchersForDate(validDateInput?: string): Promise<
   };
 }
 
-export function listVouchers(limit = 200): VoucherRecord[] {
-  return db
+export interface ListVouchersOptions {
+  search?: string;
+  status?: string;
+  validDate?: string;
+  transactionId?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export function listVouchers(options: ListVouchersOptions = {}): PaginatedResult<VoucherRecord> {
+  const { search = "", status, validDate, transactionId, limit = 50, offset = 0 } = options;
+
+  let whereClause = "";
+  const params: unknown[] = [];
+
+  if (search.trim()) {
+    whereClause = "WHERE (v.voucher_code LIKE ? OR t.guest_name LIKE ?)";
+    const searchPattern = `%${search.trim()}%`;
+    params.push(searchPattern, searchPattern);
+  }
+
+  if (status) {
+    whereClause += whereClause ? " AND v.status = ?" : "WHERE v.status = ?";
+    params.push(status);
+  }
+
+  if (validDate) {
+    whereClause += whereClause ? " AND v.valid_date = ?" : "WHERE v.valid_date = ?";
+    params.push(validDate);
+  }
+
+  if (transactionId) {
+    whereClause += whereClause ? " AND v.transaction_id = ?" : "WHERE v.transaction_id = ?";
+    params.push(transactionId);
+  }
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as count FROM vouchers v INNER JOIN transactions t ON t.id = v.transaction_id ${whereClause}`)
+    .get(...params) as { count: number };
+
+  const data = db
     .prepare(
       `
         SELECT
@@ -1185,11 +1689,20 @@ export function listVouchers(limit = 200): VoucherRecord[] {
           v.created_at
         FROM vouchers v
         INNER JOIN transactions t ON t.id = v.transaction_id
+        ${whereClause}
         ORDER BY v.valid_date DESC, v.id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `,
     )
-    .all(limit) as VoucherRecord[];
+    .all(...params, limit, offset) as VoucherRecord[];
+
+  return {
+    data,
+    total: countRow.count,
+    limit,
+    offset,
+    hasMore: offset + data.length < countRow.count,
+  };
 }
 
 export async function sendVoucherManual(input: {
@@ -1406,8 +1919,52 @@ export function scanVoucherByCode(voucherCode: string): {
   };
 }
 
-export function listRatings(limit = 120): RatingRecord[] {
-  return db
+export interface ListRatingsOptions {
+  ratingType?: RatingType;
+  minRating?: number;
+  maxRating?: number;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function listRatings(options: ListRatingsOptions = {}): PaginatedResult<RatingRecord> {
+  const { ratingType, minRating, maxRating, search = "", limit = 50, offset = 0 } = options;
+
+  let whereClause = "";
+  const params: unknown[] = [];
+
+  if (ratingType) {
+    whereClause = "WHERE r.rating_type = ?";
+    params.push(ratingType);
+  }
+
+  if (minRating !== undefined) {
+    whereClause += whereClause ? " AND r.general_rating >= ?" : "WHERE r.general_rating >= ?";
+    params.push(minRating);
+  }
+
+  if (maxRating !== undefined) {
+    whereClause += whereClause ? " AND r.general_rating <= ?" : "WHERE r.general_rating <= ?";
+    params.push(maxRating);
+  }
+
+  if (search.trim()) {
+    const searchPattern = `%${search.trim()}%`;
+    if (whereClause) {
+      whereClause += " AND (r.comment LIKE ? OR t.guest_name LIKE ? OR v.vendor_name LIKE ?)";
+      params.push(searchPattern, searchPattern, searchPattern);
+    } else {
+      whereClause = "WHERE (r.comment LIKE ? OR t.guest_name LIKE ? OR v.vendor_name LIKE ?)";
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+  }
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as count FROM ratings r LEFT JOIN transactions t ON r.reference_type = 'Transaction' AND r.reference_id = t.id LEFT JOIN vendors v ON r.reference_type = 'Vendor' AND r.reference_id = v.id ${whereClause}`)
+    .get(...params) as { count: number };
+
+  const data = db
     .prepare(
       `
         SELECT
@@ -1433,11 +1990,20 @@ export function listRatings(limit = 120): RatingRecord[] {
           ON r.reference_type = 'Transaction' AND r.reference_id = t.id
         LEFT JOIN vendors v
           ON r.reference_type = 'Vendor' AND r.reference_id = v.id
+        ${whereClause}
         ORDER BY r.submitted_at DESC, r.id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `,
     )
-    .all(limit) as RatingRecord[];
+    .all(...params, limit, offset) as RatingRecord[];
+
+  return {
+    data,
+    total: countRow.count,
+    limit,
+    offset,
+    hasMore: offset + data.length < countRow.count,
+  };
 }
 
 export async function submitRating(input: {
@@ -1725,15 +2291,32 @@ export function listVendorsForRating(): Array<{
   }>;
 }
 
-export function getAdminSnapshot() {
+export function getAdminSnapshot(options?: {
+  rooms?: ListRoomsOptions;
+  vendors?: ListVendorsOptions;
+  transactions?: ListTransactionsOptions;
+  vouchers?: ListVouchersOptions;
+  ratings?: ListRatingsOptions;
+}) {
+  const roomsResult = listRooms({ ...options?.rooms, limit: 300 });
+  const vendorsResult = listVendors({ ...options?.vendors, limit: 300 });
+  const transactionsResult = listTransactions({ ...options?.transactions, limit: 200 });
+  const vouchersResult = listVouchers({ ...options?.vouchers, limit: 240 });
+  const ratingsResult = listRatings({ ...options?.ratings, limit: 200 });
+
   return {
     summary: getDashboardSummary(),
     gatewaySettings: getGatewaySettings(),
-    rooms: listRooms(300),
-    vendors: listVendors(300),
-    transactions: listTransactions(200),
-    vouchers: listVouchers(240),
-    ratings: listRatings(200),
+    rooms: roomsResult.data,
+    roomsTotal: roomsResult.total,
+    vendors: vendorsResult.data,
+    vendorsTotal: vendorsResult.total,
+    transactions: transactionsResult.data,
+    transactionsTotal: transactionsResult.total,
+    vouchers: vouchersResult.data,
+    vouchersTotal: vouchersResult.total,
+    ratings: ratingsResult.data,
+    ratingsTotal: ratingsResult.total,
     ratingSummary: getRatingTypeSummary(),
     notificationLogs: listNotificationLogs(240),
   };

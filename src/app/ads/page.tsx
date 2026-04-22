@@ -1,16 +1,9 @@
 import Link from "next/link";
 
 import { getGatewaySettings } from "@/lib/hotel-service";
+import { getSingleQueryValue } from "@/lib/route-utils";
 
 type SearchParamsInput = Promise<Record<string, string | string[] | undefined>>;
-
-function getSingle(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || "";
-  }
-
-  return value || "";
-}
 
 function toYoutubeEmbed(url: string): string | null {
   const watchMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/i);
@@ -23,8 +16,8 @@ function toYoutubeEmbed(url: string): string | null {
 
 export default async function AdsPage(props: { searchParams: SearchParamsInput }) {
   const searchParams = await props.searchParams;
-  const type = getSingle(searchParams.type) || "Room";
-  const nextPath = getSingle(searchParams.next) || `/rating/thanks?type=${encodeURIComponent(type)}`;
+  const type = getSingleQueryValue(searchParams.type) || "Room";
+  const nextPath = getSingleQueryValue(searchParams.next) || `/rating/thanks?type=${encodeURIComponent(type)}`;
 
   const settings = getGatewaySettings();
   const configuredVideoUrl = settings.videoAdsUrl.trim();

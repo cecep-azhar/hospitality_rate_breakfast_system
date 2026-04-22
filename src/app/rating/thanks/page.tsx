@@ -1,18 +1,12 @@
 import Link from "next/link";
 
+import { getSingleQueryValue } from "@/lib/route-utils";
+
 type SearchParamsInput = Promise<Record<string, string | string[] | undefined>>;
-
-function getSingle(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || "";
-  }
-
-  return value || "";
-}
 
 export default async function RatingThanksPage(props: { searchParams: SearchParamsInput }) {
   const searchParams = await props.searchParams;
-  const type = getSingle(searchParams.type) || "Room";
+  const type = getSingleQueryValue(searchParams.type) || "Room";
 
   return (
     <main className="page-shell">
