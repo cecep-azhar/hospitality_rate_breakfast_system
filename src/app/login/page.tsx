@@ -65,12 +65,6 @@ export default async function LoginPage(props: { searchParams: SearchParamsInput
           </button>
         </form>
 
-        <article className="kpi mt-4">
-          <p className="kpi-label">Default Login (jika belum ada user)</p>
-          <p className="text-sm text-[#355f53] mt-1">Email: admin@grandsunshine.local</p>
-          <p className="text-sm text-[#355f53]">Password: Admin123!</p>
-        </article>
-
         <div className="mt-4">
           <Link href="/" className="btn btn-ghost">
             Kembali ke Home

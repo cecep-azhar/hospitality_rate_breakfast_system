@@ -7,6 +7,31 @@ const TOTP_DIGITS = 6;
 const TOTP_INTERVAL = 30; // seconds
 const TOTP_ALGORITHM = "sha1";
 
+// RFC4648 base32 alphabet (no padding)
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function toBase32(buffer: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let output = "";
+
+  for (let i = 0; i < buffer.length; i++) {
+    value = (value << 8) | buffer[i];
+    bits += 8;
+
+    while (bits >= 5) {
+      bits -= 5;
+      output += BASE32_ALPHABET[(value >>> bits) & 0x1f];
+    }
+  }
+
+  if (bits > 0) {
+    output += BASE32_ALPHABET[(value << (5 - bits)) & 0x1f];
+  }
+
+  return output;
+}
+
 export interface TOTPSecret {
   secret: string;
   qrCodeUrl: string;
@@ -18,7 +43,8 @@ export interface TOTPCode {
 }
 
 export function generateTOTPSecret(email: string): TOTPSecret {
-  const secret = randomBytes(20).toString("base32");
+  const secretBytes = randomBytes(20);
+  const secret = toBase32(secretBytes);
   const qrCodeUrl = generateOTPAuthUrl(email, secret);
 
   return {
@@ -74,8 +100,36 @@ export function verifyTOTP(secret: string, userCode: string): boolean {
   return false;
 }
 
+function fromBase32(str: string): Buffer {
+  const clean = str.replace(/[^A-Z2-7]/gi, "").toUpperCase();
+  const bits: number[] = [];
+
+  for (const char of clean) {
+    const val = BASE32_ALPHABET.indexOf(char);
+    for (let i = 4; i >= 0; i--) {
+      bits.push((val >>> i) & 1);
+    }
+  }
+
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(
+      (bits[i] << 7) |
+      (bits[i + 1] << 6) |
+      (bits[i + 2] << 5) |
+      (bits[i + 3] << 4) |
+      (bits[i + 4] << 3) |
+      (bits[i + 5] << 2) |
+      (bits[i + 6] << 1) |
+      bits[i + 7]
+    );
+  }
+
+  return Buffer.from(bytes);
+}
+
 function generateTOTPFromTime(secret: string, counter: number): string {
-  const key = Buffer.from(secret.replace(/ /g, "").toUpperCase(), "base32");
+  const key = fromBase32(secret);
   const buffer = Buffer.alloc(8);
 
   // Convert counter to big-endian

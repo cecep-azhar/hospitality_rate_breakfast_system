@@ -86,17 +86,21 @@ async function requireAdminSessionOrRedirect(nextPath = "/admin") {
   return session;
 }
 
-function getClientIP(): string {
-  const headersList = headers();
-  const forwarded = headersList.get("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
+async function getClientIP(): Promise<string> {
+  try {
+    const headersList = await headers();
+    const forwarded = headersList.get("x-forwarded-for");
+    if (forwarded) {
+      return forwarded.split(",")[0].trim();
+    }
+    return headersList.get("x-real-ip") || "unknown";
+  } catch {
+    return "unknown";
   }
-  return headersList.get("x-real-ip") || "unknown";
 }
 
 export async function loginAdminAction(formData: FormData) {
-  const ip = getClientIP();
+  const ip = await getClientIP();
   const rateLimit = checkRateLimit(ip);
 
   if (!rateLimit.allowed) {

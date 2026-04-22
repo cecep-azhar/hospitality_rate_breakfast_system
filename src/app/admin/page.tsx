@@ -37,6 +37,13 @@ function statusChipClass(status: string): string {
   }
 }
 
+function maskToken(token: string): string {
+  if (!token || token.length < 8) {
+    return "••••••••";
+  }
+  return `${token.slice(0, 4)}••••••••${token.slice(-4)}`;
+}
+
 function formatDateTime(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -239,7 +246,10 @@ export default async function AdminPage(props: { searchParams: SearchParamsInput
                     className="admin-field"
                     id="waTokenVoucher"
                     name="waTokenVoucher"
+                    type="password"
                     defaultValue={snapshot.gatewaySettings.waTokenVoucher}
+                    placeholder="Masukkan token WA"
+                    autoComplete="new-password"
                   />
                 </div>
 
@@ -264,7 +274,10 @@ export default async function AdminPage(props: { searchParams: SearchParamsInput
                     className="admin-field"
                     id="waTokenRating"
                     name="waTokenRating"
+                    type="password"
                     defaultValue={snapshot.gatewaySettings.waTokenRating}
+                    placeholder="Masukkan token WA"
+                    autoComplete="new-password"
                   />
                 </div>
 

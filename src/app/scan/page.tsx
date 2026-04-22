@@ -8,7 +8,7 @@ type SearchParamsInput = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function ScanPage(props: { searchParams: SearchParamsInput }) {
   const searchParams = await props.searchParams;
-  const latestVouchers = listVouchers(80);
+  const latestVouchers = listVouchers({ limit: 80 });
 
   return (
     <main className="page-shell space-y-4">
@@ -105,7 +105,7 @@ export default async function ScanPage(props: { searchParams: SearchParamsInput 
               </tr>
             </thead>
             <tbody>
-              {latestVouchers.map((voucher) => (
+              {latestVouchers.data.map((voucher) => (
                 <tr key={voucher.id}>
                   <td>{voucher.id}</td>
                   <td>{voucher.guest_name}</td>

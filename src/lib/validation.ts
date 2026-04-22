@@ -8,7 +8,7 @@ export interface ValidationResult {
 export interface FieldRule {
   field: string;
   rules: Array<{
-    test: (value: unknown) => boolean;
+    test: (value: unknown, allValues?: Record<string, unknown>) => boolean;
     message: string;
   }>;
 }
@@ -101,7 +101,8 @@ export const rules = {
   }),
 
   dateRange: (checkInField: string, checkOutField: string, message?: string) => ({
-    test: (value: unknown, allValues: Record<string, unknown>) => {
+    test: (value: unknown, allValues?: Record<string, unknown>) => {
+      if (!allValues) return true;
       const checkIn = allValues[checkInField];
       const checkOut = allValues[checkOutField];
       if (!checkIn || !checkOut) return true; // Let required rule handle
@@ -228,8 +229,8 @@ export function validatePasswordChange(values: Record<string, unknown>): Validat
         rules: [
           rules.required(),
           {
-            test: (value: unknown, allValues: Record<string, unknown>) =>
-              value === allValues["newPassword"],
+            test: (value: unknown, allValues?: Record<string, unknown>) =>
+              value === allValues?.["newPassword"],
             message: "Konfirmasi password tidak cocok",
           },
         ],

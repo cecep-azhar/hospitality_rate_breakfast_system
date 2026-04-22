@@ -209,7 +209,8 @@ function createDatabase(): SqliteDatabase {
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('Super Admin', 'Resto Checker', 'Manager')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS rooms (
@@ -218,7 +219,9 @@ function createDatabase(): SqliteDatabase {
       type TEXT NOT NULL CHECK(type IN ('Kamar', 'Meeting Room')),
       capacity INTEGER NOT NULL DEFAULT 0,
       description TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      deleted_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS vendors (
@@ -227,7 +230,9 @@ function createDatabase(): SqliteDatabase {
       company_name TEXT,
       contact_person TEXT,
       phone_number TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      deleted_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
@@ -242,6 +247,8 @@ function createDatabase(): SqliteDatabase {
       pax_child INTEGER NOT NULL DEFAULT 0,
       source_booking TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      deleted_at TEXT,
       FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE RESTRICT
     );
 
